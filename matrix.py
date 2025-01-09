@@ -8,19 +8,20 @@ import numpy as np
 from tqdm.auto import tqdm, trange
 
 
+# Класс для работы с матрицами по модулю
 class ModuloMatrix:
     """Operations on matrices modulo a given modulus."""
 
     def __init__(self, modulus: int):
-        """Initialize with a given modulus."""
+        """Инициализация с заданным модулем."""
         self.mod = modulus
 
     def mod_inv(self, a: int) -> int:
-        """Compute multiplicative inverse of a mod self.mod."""
+        """Вычисление мультипликативной обратной величины a mod self.mod."""
         a = a % self.mod
         if a == 0:
-            raise ValueError("No inverse for 0.")
-        # Extended Euclidean algorithm
+            raise ValueError("No inverse for 0.")  # Для 0 нет обратного элемента
+        # Расширенный алгоритм Евклида
         t, newt = 0, 1
         r, newr = self.mod, a
         while newr != 0:
@@ -32,112 +33,110 @@ class ModuloMatrix:
         return t
 
     def mat_mul(self, A, B):
-        """Multiply two n x n matrices A and B modulo self.mod."""
+        """Умножение двух квадратных матриц A и B по модулю self.mod."""
         A = np.array(A, dtype=int)
         B = np.array(B, dtype=int)
 
-        result = (A @ B) % self.mod
+        result = (A @ B) % self.mod  # Умножение с остатком
         return tuple(tuple(int(v) for v in row) for row in result)
 
     def mat_inv(self, A, postfix: str = ""):
+        """Вычисление обратной матрицы по модулю."""
         A = np.array(A, dtype=int)
         n = A.shape[0]
-        I = np.eye(n, dtype=int)
+        I = np.eye(n, dtype=int)  # Единичная матрица
         mod = self.mod
 
         for i in trange(n, desc=f"Inverting {postfix}"):
-            # Find pivot
+            # Нахождение опорного элемента
             pivot = -1
             for r in range(i, n):
                 if A[r, i] % mod != 0:
                     pivot = r
                     break
             if pivot == -1:
-                raise ValueError("Matrix not invertible")
+                raise ValueError("Matrix not invertible")  # Матрица необратима
 
-            # Swap if needed
+            # Замена строк
             if pivot != i:
                 A[[i, pivot]] = A[[pivot, i]]
                 I[[i, pivot]] = I[[pivot, i]]
 
-            # Normalize pivot row
+            # Нормализация строки с опорным элементом
             inv_pivot = self.mod_inv(A[i, i])
             A[i, :] = (A[i, :] * inv_pivot) % mod
             I[i, :] = (I[i, :] * inv_pivot) % mod
 
-            # Eliminate in other rows
-            # Вместо цикла по всем строкам, используем векторизацию
+            # Устранение влияния текущей строки на остальные
             factors = A[:, i].copy()
             factors[i] = 0
             nonzero_rows = (factors != 0)
 
-            # Для всех строк, где факторы не ноль, вычитаем factor * pivot_row
             A[nonzero_rows] = (A[nonzero_rows] - factors[nonzero_rows, None] * A[i]) % mod
             I[nonzero_rows] = (I[nonzero_rows] - factors[nonzero_rows, None] * I[i]) % mod
 
         return tuple(tuple(row) for row in I)
 
 
+# Класс для шифрования с использованием некомутационных матриц
 class MatrixCrypto:
     """Noncommutative matrix-based encryption using a given matrix dimension."""
 
     def __init__(self, dimension: int, modulus: int = 37):
-        """Initialize with matrix dimension and modulus."""
-        self.dim = dimension
-        self.modulus = modulus
-        self.mm = ModuloMatrix(modulus)
-        self.rng = random.SystemRandom()
+        """Инициализация с размерностью матрицы и модулем."""
+        self.dim = dimension  # Размерность матрицы
+        self.modulus = modulus  # Модуль
+        self.mm = ModuloMatrix(modulus)  # Экземпляр ModuloMatrix
+        self.rng = random.SystemRandom()  # Случайный генератор для безопасности
 
     def conjugate(self, x, a, apostfix: str = "", precomputed_inv=None):
-        """Compute conjugation x^a = a^{-1} x a."""
+        """Вычисление сопряжения x^a = a^{-1} x a."""
         a_inv = self.mm.mat_inv(a, apostfix) if precomputed_inv is None else precomputed_inv
         left = self.mm.mat_mul(a_inv, x)
         return self.mm.mat_mul(left, a), a_inv
 
     def random_jordan_cell(self):
-        # random Jordan cell
-        M = [[0]*self.dim for _ in range(self.dim)]
-        lmda = self.rng.randrange(1, self.modulus)
+        """Создание случайной жордановой клетки."""
+        M = [[0] * self.dim for _ in range(self.dim)]
+        lmda = self.rng.randrange(1, self.modulus)  # Случайное значение на диагонали
         for i in range(self.dim):
             M[i][i] = lmda
             if i > 0:
-                M[i-1][i] = 1
+                M[i - 1][i] = 1  # Верхняя единичная поддиагональ
         return tuple(tuple(row) for row in M)
 
     def random_upper_triangle(self):
-        # random upper-triangle with eq. diag
-        M = [[0]*self.dim for _ in range(self.dim)]
+        """Создание случайной верхнетреугольной матрицы с одинаковыми диагональными элементами."""
+        M = [[0] * self.dim for _ in range(self.dim)]
         diag_el = [self.rng.randrange(1, self.modulus) for _ in range(self.dim)]
         for i in range(self.dim):
             M[i][i] = diag_el[0]
-            for j in range(i+1, self.dim):
-                M[i][j] = diag_el[j-i]
+            for j in range(i + 1, self.dim):
+                M[i][j] = diag_el[j - i]
         return tuple(tuple(row) for row in M)
 
     def hash_matrix(self, M):
-        """Hash an n x n matrix M and return a digest."""
+        """Хэширование матрицы и получение дайджеста."""
         arr = np.array(M)
         data = arr.tobytes()
         return hashlib.sha256(data).digest()
 
     def xor_bytes(self, a: bytes, b: bytes) -> bytes:
-        """XOR two byte sequences."""
+        """Побитовый XOR двух последовательностей байтов."""
         return bytes(x ^ y for x, y in zip(a, b))
 
     def generate_random_matrix(self):
+        """Генерация случайной матрицы."""
         M = []
         for __ in trange(self.dim, desc="Generate x"):
-            row = []
-            for _ in range(self.dim):
-                row.append(self.rng.randrange(0, self.modulus))
+            row = [self.rng.randrange(0, self.modulus) for _ in range(self.dim)]
             M.append(row)
         return M
 
     def generate_keys(self, keydir: str, x_file: str, sk_file: str, pk_file: str):
-        """Generate new keys. If directory not empty, ask user to overwrite."""
+        """Генерация ключей и сохранение их в файлы."""
         if os.path.exists(keydir) and os.listdir(keydir):
-            ans = input(f"Directory '{
-                        keydir}' already exists and may contain keys. Overwrite? (y/n): ").strip().lower()
+            ans = input(f"Directory '{keydir}' already exists. Overwrite? (y/n): ").strip().lower()
             if ans != 'y':
                 print("Key generation aborted.")
                 return
@@ -150,26 +149,20 @@ class MatrixCrypto:
 
         os.makedirs(keydir, exist_ok=True)
 
-        x_path = os.path.join(keydir, x_file)
-        sk_path = os.path.join(keydir, sk_file)
-        pk_path = os.path.join(keydir, pk_file)
-
         x = self.generate_random_matrix()
-        with open(x_path, "w") as f:
+        with open(os.path.join(keydir, x_file), "w") as f:
             json.dump(x, f)
 
         b = self.random_upper_triangle()
-        # Convert to tuple of tuples if needed
-        x_tuple = tuple(tuple(row) for row in x)
-        z, _ = self.conjugate(x_tuple, b, "secret key b")
+        z, _ = self.conjugate(tuple(tuple(row) for row in x), b, "secret key b")
 
-        with open(sk_path, "w") as f:
+        with open(os.path.join(keydir, sk_file), "w") as f:
             json.dump(b, f)
-        with open(pk_path, "w") as f:
+        with open(os.path.join(keydir, pk_file), "w") as f:
             json.dump(z, f)
 
     def encrypt_message(self, keydir: str, pk_file: str, x_file: str, message: str, output_file: str):
-        """Encrypt a message using public key z and public element x."""
+        """Шифрование сообщения с использованием открытого ключа."""
         pk_path = os.path.join(keydir, pk_file)
         x_path = os.path.join(keydir, x_file)
         out_path = output_file
@@ -206,7 +199,7 @@ class MatrixCrypto:
             }, f)
 
     def decrypt_message(self, keydir: str, sk_file: str, x_file: str, input_file: str, output_file: str):
-        """Decrypt a message using secret key b and public element x."""
+        """Расшифрование сообщения с использованием закрытого ключа."""
         sk_path = os.path.join(keydir, sk_file)
         x_path = os.path.join(keydir, x_file)
         in_path = input_file
@@ -255,6 +248,7 @@ def add_common_args(parser):
 
 
 def main():
+    """Главная функция для управления командами."""
     parser = argparse.ArgumentParser(
         description="Noncommutative matrix-based encryption.")
     subparsers = parser.add_subparsers(dest="command")
