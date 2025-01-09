@@ -15,17 +15,6 @@ class ModuloMatrix:
         """Initialize with a given modulus."""
         self.mod = modulus
 
-    """
-    print(S)
-    print(F)
-    print(T)
-    print(P)
-
-    print(find_inv_affine(T))
-    print([find_inverse_poly(F[i]) for i in range(M)])
-    print(find_inv_affine(S))
-    print(P_i)
-    """
     def mod_inv(self, a: int) -> int:
         """Compute multiplicative inverse of a mod self.mod."""
         a = a % self.mod
